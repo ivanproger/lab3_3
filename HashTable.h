@@ -2,71 +2,122 @@
 #pragma once
 
 #include "IDictionary.h"
-#include "DynamicArray.h"
 #include "Pair.h"
-#include "DefaultHash.h" // Подключаем DefaultHash
+#include "DefaultHash.h" // Предполагается, что у вас есть дефолтная хеш-функция
 #include <stdexcept>
 #include <functional>
-#include <iostream> // Для отладочных выводов
+#include <iostream>
 
-// Хеш-таблица с цепочками
+// Статусы ячеек хеш-таблицы
+enum class EntryStatus {
+    EMPTY,
+    OCCUPIED,
+    DELETED
+};
+
+// Структура для хранения пары ключ-значение и статуса
+template <typename Key, typename Value>
+struct HashEntry {
+    Pair<Key, Value> pair;
+    EntryStatus status;
+
+    HashEntry() : pair(), status(EntryStatus::EMPTY) {}
+    HashEntry(const Key& key, const Value& value) : pair(key, value), status(EntryStatus::OCCUPIED) {}
+};
+
+// Хеш-таблица с открытой адресацией и двойным хешированием
 template <typename Key, typename Value, typename HashFunc = DefaultHash<Key>>
 class HashTable : public IDictionary<Key, Value> {
 private:
-    struct Bucket {
-        DynamicArray<Pair<Key, Value>> chain; // Цепочка пар
-    };
+    HashEntry<Key, Value>* table; // Сырые массивы
+    int capacity;                 // Текущая вместимость таблицы
+    int count;                    // Количество занятых элементов
+    double loadFactor;            // Порог загрузочного фактора для рехеширования
+    HashFunc hashFunc;            // Хеш-функция
+    int R;                        // Простое число для второй хеш-функции
 
-    DynamicArray<Bucket> buckets;
-    int count;             // Количество реально элементов
-    double loadFactor;     // Порог загрузочного фактора для рехеша
-    HashFunc hashFunc;
+    // Вторая хеш-функция для двойного хеширования
+    size_t secondHash(const Key& key) const {
+        if (capacity <= 1) return 1;
+        return 1 + (hashFunc(key) % (capacity - 1));
+    }
 
+    // Функция для нахождения предыдущего простого числа меньше n
+    int previousPrime(int n) const {
+        while (n > 1) {
+            bool isPrime = true;
+            for (int i = 2; i * i <= n; ++i) {
+                if (n % i == 0) {
+                    isPrime = false;
+                    break;
+                }
+            }
+            if (isPrime) return n;
+            n--;
+        }
+        return 7; // Минимальное разумное простое число
+    }
+
+    // Рехеширование таблицы с удвоенной вместимостью
     void rehash() {
-        int oldCapacity = buckets.GetLength();
-        DynamicArray<Bucket> oldBuckets = buckets;
+        std::cout << "Rehashing: Old capacity = " << capacity << ", Old count = " << count << "\n";
+        int oldCapacity = capacity;
+        HashEntry<Key, Value>* oldTable = table;
 
-        int newCapacity = oldCapacity * 2;
-        if (newCapacity <= 0) {
-            newCapacity = 1;
+        // Увеличиваем вместимость в два раза
+        capacity = oldCapacity * 2;
+        if (capacity <= 0) {
+            capacity = 1;
         }
 
-        // Инициализируем новые бакеты
-        buckets = DynamicArray<Bucket>(newCapacity);
-        count = 0; // Мы заново будем вставлять все элементы
+        // Обновляем R как простое число меньше новой вместимости
+        R = previousPrime(capacity / 2);
 
-        for (int i = 0; i < newCapacity; ++i) {
-            buckets.Append(Bucket());
+        // Создаём новую таблицу
+        table = new HashEntry<Key, Value>[capacity];
+        for (int i = 0; i < capacity; ++i) {
+            table[i].status = EntryStatus::EMPTY;
         }
+        count = 0; // Сброс счётчика
 
-        // Переносим элементы из старых бакетов в новые
+        // Переносим элементы из старой таблицы в новую
         for (int i = 0; i < oldCapacity; i++) {
-            Bucket& oldBucket = oldBuckets.GetElem(i);
-            for (int j = 0; j < oldBucket.chain.GetLength(); j++) {
-                Pair<Key, Value>& p = oldBucket.chain.GetElem(j);
-                insert(p.key, p.value);
+            if (oldTable[i].status == EntryStatus::OCCUPIED) {
+                try {
+                    insert(oldTable[i].pair.key, oldTable[i].pair.value);
+                }
+                catch (const std::exception& e) {
+                    std::cerr << "Error during rehashing: " << e.what() << "\n";
+                }
             }
         }
+
+        // Освобождаем память старой таблицы
+        delete[] oldTable;
+        std::cout << "Rehashing complete: New capacity = " << capacity << "\n";
     }
 
 public:
     // Конструктор
-    HashTable(int initialCapacity = 16, double loadFactor = 0.75)
-        : buckets(initialCapacity), count(0), loadFactor(loadFactor), hashFunc(HashFunc()) {
-        if (initialCapacity <= 0) {
-            initialCapacity = 1;
+    HashTable(int initialCapacity = 11, double loadFactor = 0.75)
+        : capacity(initialCapacity), count(0), loadFactor(loadFactor), hashFunc(HashFunc()) {
+        if (capacity <= 0) {
+            capacity = 1;
         }
-
-        // Инициализируем каждый Bucket (по умолчанию они пустые)
-        for (int i = 0; i < initialCapacity; ++i) {
-            buckets.Append(Bucket());
+        table = new HashEntry<Key, Value>[capacity];
+        for (int i = 0; i < capacity; ++i) {
+            table[i].status = EntryStatus::EMPTY;
         }
+        R = previousPrime(capacity / 2);
     }
 
     // Конструктор копирования
     HashTable(const HashTable& other)
-        : buckets(other.buckets), count(other.count), loadFactor(other.loadFactor), hashFunc(other.hashFunc) {
-        // Копируются все бакеты и их цепочки благодаря реализации копирования в DynamicArray
+        : capacity(other.capacity), count(other.count), loadFactor(other.loadFactor), hashFunc(other.hashFunc), R(other.R) {
+        table = new HashEntry<Key, Value>[capacity];
+        for (int i = 0; i < capacity; i++) {
+            table[i] = other.table[i];
+        }
     }
 
     // Оператор присваивания копированием
@@ -75,118 +126,165 @@ public:
             return *this; // Защита от самоприсваивания
         }
 
-        // Копируем все члены
-        buckets = other.buckets;
+        // Освобождаем текущую таблицу
+        delete[] table;
+
+        // Копируем данные из другой таблицы
+        capacity = other.capacity;
         count = other.count;
         loadFactor = other.loadFactor;
         hashFunc = other.hashFunc;
+        R = other.R;
+
+        table = new HashEntry<Key, Value>[capacity];
+        for (int i = 0; i < capacity; i++) {
+            table[i] = other.table[i];
+        }
 
         return *this;
     }
 
     // Деструктор
     ~HashTable() {
-        // DynamicArray и Pair сами управляют памятью
+        delete[] table;
     }
 
     // Вставка пары ключ-значение
     void insert(const Key& key, const Value& value) override {
-        if (buckets.GetLength() == 0) {
-            throw std::runtime_error("HashTable has no buckets initialized.");
-        }
-
-        double currentLoadFactor = static_cast<double>(count + 1) / buckets.GetLength();
-        if (currentLoadFactor > loadFactor) {
-            std::cout << "Load factor exceeded. Rehashing..." << std::endl;
+        // Проверяем, не превышен ли загрузочный фактор
+        if ((double)(count + 1) / capacity > loadFactor) {
+            std::cout << "Load factor exceeded. Initiating rehash.\n";
             rehash();
         }
 
-        size_t hashValue = hashFunc(key);
-        int index = static_cast<int>(hashValue % buckets.GetLength());
+        size_t hash1 = hashFunc(key) % capacity;
+        size_t hash2 = secondHash(key);
 
-        // Проверяем, есть ли уже ключ в цепочке
-        DynamicArray<Pair<Key, Value>>& chain = buckets.GetElem(index).chain;
-        for (int i = 0; i < chain.GetLength(); i++) {
-            if (chain.GetElem(i).key == key) { // Используется оператор==
-                // Обновляем значение
-                chain.GetElem(i).value = value;
-                std::cout << "Updated existing key." << std::endl;
+        int firstDeletedIndex = -1;
+
+        for (int i = 0; i < capacity; i++) {
+            size_t index = (hash1 + i * hash2) % capacity;
+
+            if (table[index].status == EntryStatus::EMPTY) {
+                // Если раньше нашли удалённую ячейку, используем её
+                if (firstDeletedIndex != -1) {
+                    table[firstDeletedIndex].pair = Pair<Key, Value>(key, value);
+                    table[firstDeletedIndex].status = EntryStatus::OCCUPIED;
+                }
+                else {
+                    table[index] = HashEntry<Key, Value>(key, value);
+                }
+                count++;
+                return;
+            }
+            else if (table[index].status == EntryStatus::DELETED) {
+                if (firstDeletedIndex == -1) {
+                    firstDeletedIndex = (int)index;
+                }
+            }
+            else if (table[index].status == EntryStatus::OCCUPIED && table[index].pair.key == key) {
+                // Обновляем значение, если ключ уже существует
+                table[index].pair.value = value;
                 return;
             }
         }
 
-        // Иначе добавляем новую пару
-        chain.Append(Pair<Key, Value>(key, value));
-        count++;
-        std::cout << "Added new key." << std::endl;
+        // Если нашли удалённую ячейку ранее и не вставили
+        if (firstDeletedIndex != -1) {
+            table[firstDeletedIndex].pair = Pair<Key, Value>(key, value);
+            table[firstDeletedIndex].status = EntryStatus::OCCUPIED;
+            count++;
+            return;
+        }
+
+        // Если таблица полностью заполнена
+        throw std::runtime_error("HashTable is full, cannot insert new key.");
     }
 
     // Проверка существования ключа
     bool exist(const Key& key) const override {
-        if (buckets.GetLength() == 0) {
-            return false;
-        }
+        size_t hash1 = hashFunc(key) % capacity;
+        size_t hash2 = secondHash(key);
 
-        size_t hashValue = hashFunc(key);
-        int index = static_cast<int>(hashValue % buckets.GetLength());
-
-        const DynamicArray<Pair<Key, Value>>& chain = buckets.GetElem(index).chain;
-        for (int i = 0; i < chain.GetLength(); i++) {
-            if (chain.GetElem(i).key == key) { // Используется оператор==
+        for (int i = 0; i < capacity; i++) {
+            size_t index = (hash1 + i * hash2) % capacity;
+            if (table[index].status == EntryStatus::EMPTY) {
+                // Ключа точно нет
+                return false;
+            }
+            else if (table[index].status == EntryStatus::OCCUPIED && table[index].pair.key == key) {
                 return true;
             }
+            // Если ячейка DELETED или OCCUPIED с другим ключом, продолжаем искать
         }
         return false;
     }
 
     // Получение значения по ключу
     Value get(const Key& key) const override {
-        if (buckets.GetLength() == 0) {
-            throw std::runtime_error("HashTable has no buckets initialized.");
-        }
+        size_t hash1 = hashFunc(key) % capacity;
+        size_t hash2 = secondHash(key);
 
-        size_t hashValue = hashFunc(key);
-        int index = static_cast<int>(hashValue % buckets.GetLength());
-
-        const DynamicArray<Pair<Key, Value>>& chain = buckets.GetElem(index).chain;
-        for (int i = 0; i < chain.GetLength(); i++) {
-            if (chain.GetElem(i).key == key) { // Используется оператор==
-                return chain.GetElem(i).value;
+        for (int i = 0; i < capacity; i++) {
+            size_t index = (hash1 + i * hash2) % capacity;
+            if (table[index].status == EntryStatus::EMPTY) {
+                throw std::runtime_error("Key not found in HashTable.");
             }
+            else if (table[index].status == EntryStatus::OCCUPIED && table[index].pair.key == key) {
+                return table[index].pair.value;
+            }
+            // Если DELETED, продолжаем
         }
-        throw std::runtime_error("Key not found in HashTable");
+        throw std::runtime_error("Key not found in HashTable.");
     }
 
     // Удаление пары по ключу
     bool remove(const Key& key) override {
-        if (buckets.GetLength() == 0) {
-            return false;
-        }
+        size_t hash1 = hashFunc(key) % capacity;
+        size_t hash2 = secondHash(key);
 
-        size_t hashValue = hashFunc(key);
-        int index = static_cast<int>(hashValue % buckets.GetLength());
-
-        DynamicArray<Pair<Key, Value>>& chain = buckets.GetElem(index).chain;
-        for (int i = 0; i < chain.GetLength(); i++) {
-            if (chain.GetElem(i).key == key) { // Используется оператор==
-                chain.RemoveAt(i);
+        for (int i = 0; i < capacity; i++) {
+            size_t index = (hash1 + i * hash2) % capacity;
+            if (table[index].status == EntryStatus::EMPTY) {
+                return false; // Ключ не найден
+            }
+            else if (table[index].status == EntryStatus::OCCUPIED && table[index].pair.key == key) {
+                table[index].status = EntryStatus::DELETED;
                 count--;
-                std::cout << "Removed key." << std::endl;
                 return true;
             }
+            // Если DELETED, продолжаем искать
         }
-        return false;
+        return false; // Ключ не найден
     }
 
     // Получение всех пар ключ-значение
     void getAllPairs(DynamicArray<Pair<Key, Value>>& arr) const override {
-        for (int i = 0; i < buckets.GetLength(); i++) {
-            const DynamicArray<Pair<Key, Value>>& chain = buckets.GetElem(i).chain;
-            for (int j = 0; j < chain.GetLength(); j++) {
-                arr.Append(chain.GetElem(j));
+        for (int i = 0; i < capacity; i++) {
+            if (table[i].status == EntryStatus::OCCUPIED) {
+                arr.Append(table[i].pair);
             }
         }
     }
 
-    // Дополнительные методы, например size(), capacity(), можно добавить при необходимости
+    // Количество элементов
+    int size() const {
+        return count;
+    }
+
+    // Вместимость таблицы
+    int getCapacity() const {
+        return capacity;
+    }
+
+    // Для демонстрации: вывод всех элементов
+    void display() const {
+        std::cout << "HashTable Contents:\n";
+        for (int i = 0; i < capacity; ++i) {
+            if (table[i].status == EntryStatus::OCCUPIED) {
+                std::cout << "Index " << i << ": Key = (" << table[i].pair.key.key << ", " << table[i].pair.key.value
+                    << "), Value = " << table[i].pair.value << "\n";
+            }
+        }
+    }
 };

@@ -115,8 +115,6 @@ public:
         return data[index];
     }
 
-
-
     void Swap(T& a, T& b) override {
         T temp = a;
         a = b;
@@ -206,10 +204,5 @@ public:
 
     typename Sequence<T>::Iterator* ToEnd() override {
         return new DynamicArrayIterator(data + size);
-    }
-
-    // Добавление метода GetCapacity
-    int GetCapacity() const {
-        return capacity;
     }
 };

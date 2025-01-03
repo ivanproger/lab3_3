@@ -21,7 +21,6 @@ class BalanceBinaryTree : public IDictionary<Key, Value> {
 private:
     TreeNode<Key, Value>* root;
 
-    // Вспомогательные функции для работы с AVL-деревом
     int getHeight(TreeNode<Key, Value>* node) const {
         return node ? node->height : 0;
     }
@@ -72,7 +71,6 @@ private:
             node->right = insertNode(node->right, key, value);
         }
         else {
-            // Ключ уже существует — обновляем значение
             node->pair.value = value;
             return node;
         }
@@ -175,7 +173,6 @@ private:
 
         updateHeight(node);
 
-        // Балансируем
         int balance = getBalanceFactor(node);
         if (balance > 1 && getBalanceFactor(node->left) >= 0)
             return rotateRight(node);

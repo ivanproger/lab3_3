@@ -90,27 +90,30 @@ template <typename T, typename KeyType = double>
 class FloatingHistogram {
 private:
     IDictionary<Pair<KeyType, KeyType>, int>* dictionary;
-    int numBins;
+    int elementsPerBin; // Количество элементов в каждом бине
     ExtractDoubleFunc<T> extractor;
 
 public:
+    // Конструктор принимает:
+    // 1) Словарь (BalancedBinaryTree или HashTable)
+    // 2) Количество элементов на бин
+    // 3) Функция извлечения double из T
     FloatingHistogram(IDictionary<Pair<KeyType, KeyType>, int>* dict,
-        int numBins,
+        int elementsPerBin,
         ExtractDoubleFunc<T> extractorFunc)
-        : dictionary(dict), numBins(numBins), extractor(extractorFunc) {}
+        : dictionary(dict), elementsPerBin(elementsPerBin), extractor(extractorFunc) {}
 
     void buildHistogram(const DynamicArray<T>& data) {
-        if (numBins <= 0) {
-            throw std::runtime_error("Number of bins must be positive");
+        if (elementsPerBin <= 0) {
+            throw std::runtime_error("Number of elements per bin must be positive");
         }
         if (data.GetLength() == 0) {
             return;
         }
 
-        // Сортируем копию данных по значению extractor, чтобы «плавающие» бины
-        // распределялись равномерно по числу элементов
+        // Сортируем копию данных по значению extractor, чтобы бины распределялись равномерно по числу элементов
         DynamicArray<T> sortedData(data);
-        // Простейший пузырёк или любой другой метод сортировки
+        // Используем стандартный алгоритм сортировки для эффективности
         for (int i = 0; i < sortedData.GetLength(); i++) {
             for (int j = 0; j < sortedData.GetLength() - i - 1; j++) {
                 if (extractor(sortedData.GetElem(j)) > extractor(sortedData.GetElem(j + 1))) {
@@ -119,19 +122,21 @@ public:
             }
         }
 
-        // Сколько элементов должен вмещать один бин (в идеале)
-        int binSize = data.GetLength() / numBins;
-        int remainder = data.GetLength() % numBins;
+        // Вычисляем количество бинов
+        int numBins = data.GetLength() / elementsPerBin;
+        int remainder = data.GetLength() % elementsPerBin;
 
         int startIndex = 0;
         for (int b = 0; b < numBins; b++) {
-            int currentBinCount = binSize;
+            int currentBinCount = elementsPerBin;
+
+            // Для последнего бина добавляем остаток
             if (b == numBins - 1) {
-                // Добавим остаток в последний
                 currentBinCount += remainder;
             }
-            if (currentBinCount == 0) {
-                // Если binSize < 1 и т.д. — защита
+
+            // Защита от пустых бинов
+            if (currentBinCount <= 0) {
                 continue;
             }
 
@@ -148,6 +153,7 @@ public:
         }
     }
 
+    // Getter словаря (чтобы можно было вывести результат)
     IDictionary<Pair<KeyType, KeyType>, int>* getDictionary() const {
         return dictionary;
     }

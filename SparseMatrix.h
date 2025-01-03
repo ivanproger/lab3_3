@@ -16,7 +16,7 @@ public:
         : dict(dictionaryImpl), rows(rows), cols(cols) {}
 
     void set(int row, int col, T value) {
-        if (row < 0 || row >= rows || col < 0 || col >= cols) {
+        if (row < 0 || row > rows || col < 0 || col > cols) {
             throw std::out_of_range("Index out of range in SparseMatrix");
         }
         Pair<int, int> key(row, col);
@@ -31,7 +31,7 @@ public:
     }
 
     T get(int row, int col) const {
-        if (row < 0 || row >= rows || col < 0 || col >= cols) {
+        if (row < 0 || row > rows || col < 0 || col > cols) {
             throw std::out_of_range("Index out of range in SparseMatrix");
         }
         Pair<int, int> key(row, col);

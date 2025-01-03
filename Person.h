@@ -22,7 +22,4 @@ public:
     double getHeight() const { return Height; }
     double getWeight() const { return Weight; }
     int getBirthYear() const { return BirthYear; }
-    // и т.д.
-
-    // Могут быть операторы сравнения (если нужно), но здесь не обязательно
 };

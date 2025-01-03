@@ -29,3 +29,4 @@ struct DefaultHash<Pair<double, double>> {
         return std::hash<double>()(keyPair.key) ^ (std::hash<double>()(keyPair.value) << 1);
     }
 };
+
